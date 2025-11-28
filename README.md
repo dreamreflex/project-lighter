@@ -25,6 +25,11 @@ npm install
 npm start
 ```
 
+3. 构建Windows应用
+```bash
+npm run build
+```
+
 ## 配置说明
 
 配置文件位于用户数据目录中，首次运行时会自动创建。

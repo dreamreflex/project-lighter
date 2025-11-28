@@ -5,7 +5,15 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "dev": "electron ."
+    "dev": "electron .",
+    "build": "electron-builder --win portable"
+  },
+  "build": {
+    "appId": "com.dreamreflex.lighter",
+    "productName": "DreamReflexLighter",
+    "win": {
+      "target": "portable"
+    }
   },
   "keywords": [
     "electron",
@@ -15,6 +23,7 @@
   "author": "",
   "license": "MIT",
   "devDependencies": {
-    "electron": "^27.0.0"
+    "electron": "^27.0.0",
+    "electron-builder": "^26.0.12"
   }
 }
