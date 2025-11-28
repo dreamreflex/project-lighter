@@ -1,0 +1,34 @@
+{
+  "projects": [
+    {
+      "id": "1",
+      "name": "运行前端",
+      "commands": [
+        {
+          "name": "安装前端依赖",
+          "command": "npm install"
+        },
+        {
+          "name": "启动前端",
+          "command": "npm run dev"
+        }
+      ],
+      "workingDir": "D:\\frontend"
+    },
+    {
+      "id": "2",
+      "name": "启动后端",
+      "commands": [
+        {
+          "name": "激活环境",
+          "command": "D:\\backend\\.venv\\Scripts\\activate.bat"
+        },
+        {
+          "name": "运行后端",
+          "command": " uvicorn app.main:app --reload"
+        }
+      ],
+      "workingDir": "D:\\backend"
+    }
+  ]
+}

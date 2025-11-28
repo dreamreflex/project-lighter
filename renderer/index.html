@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DreamReflexLighter - 项目启动器</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>DreamReflexLighter <small style="font-size: 14px; color: var(--text-secondary); font-weight: normal;">项目启动器</small></h1>
+      <div class="header-actions">
+        <div id="powershellVersion" class="powershell-version"></div>
+        <button id="addProjectBtn" class="btn btn-primary">新建项目</button>
+        <button id="exportConfigBtn" class="btn btn-secondary">导出配置</button>
+        <button id="importConfigBtn" class="btn btn-secondary">导入配置</button>
+        <button id="editConfigBtn" class="btn btn-secondary">编辑JSON</button>
+        <button id="refreshBtn" class="btn btn-secondary">刷新</button>
+      </div>
+    </header>
+
+    <div class="projects-container" id="projectsContainer">
+      <!-- 项目列表将在这里动态生成 -->
+    </div>
+
+    <div class="empty-state" id="emptyState" style="display: none;">
+      <p>暂无项目配置</p>
+      <button id="addFirstProjectBtn" class="btn btn-primary">添加第一个项目</button>
+    </div>
+
+    <footer>
+      <div class="footer-content">
+        <div class="footer-info">
+          <span class="app-name">DreamReflexLighter</span>
+          <span class="version">v1.0.0</span>
+        </div>
+        <div class="footer-desc">多项目一键启动管理工具，让开发更高效。</div>
+        <div class="footer-links">
+          <a href="#" id="helpLink">帮助文档</a>
+        </div>
+      </div>
+    </footer>
+  </div>
+
+  <!-- 交互式项目编辑模态框 -->
+  <div id="projectModal" class="modal">
+    <div class="modal-content modal-large">
+      <div class="modal-header">
+        <h2 id="projectModalTitle">新建项目</h2>
+        <button class="close-btn" id="closeProjectModalBtn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="projectForm">
+          <div class="form-group">
+            <label for="projectName">项目名称 *</label>
+            <input type="text" id="projectName" class="form-control" required placeholder="例如：前端项目">
+          </div>
+          
+          <div class="form-group">
+            <label for="projectWorkingDir">工作目录</label>
+            <div class="input-group">
+              <input type="text" id="projectWorkingDir" class="form-control" placeholder="例如：D:\\project">
+              <button type="button" id="selectDirBtn" class="btn btn-secondary">选择目录</button>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>命令流 *</label>
+            <div id="commandsContainer">
+              <!-- 命令项将在这里动态添加 -->
+            </div>
+            <button type="button" id="addCommandBtn" class="btn btn-secondary btn-sm">+ 添加命令</button>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button id="saveProjectBtn" class="btn btn-primary">保存项目</button>
+        <button id="cancelProjectBtn" class="btn btn-secondary">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 项目列表管理模态框 -->
+  <div id="projectsListModal" class="modal">
+    <div class="modal-content modal-large">
+      <div class="modal-header">
+        <h2>项目管理</h2>
+        <button class="close-btn" id="closeProjectsListModalBtn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="projectsListContainer">
+          <!-- 项目列表将在这里显示 -->
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="addNewProjectBtn" class="btn btn-primary">新建项目</button>
+        <button id="closeProjectsListBtn" class="btn btn-secondary">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- JSON配置编辑模态框 -->
+  <div id="configModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>编辑JSON配置</h2>
+        <button class="close-btn" id="closeModalBtn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <textarea id="configTextarea" placeholder='{"projects": [{"id": "1", "name": "项目1", "command": "npm run dev", "workingDir": "d:\\data"}]}'></textarea>
+      </div>
+      <div class="modal-footer">
+        <button id="saveConfigBtn" class="btn btn-primary">保存</button>
+        <button id="cancelConfigBtn" class="btn btn-secondary">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 隐藏的文件输入用于导入 -->
+  <input type="file" id="importFileInput" accept=".json" style="display: none;">
+
+  <script src="renderer.js"></script>
+</body>
+</html>
+
