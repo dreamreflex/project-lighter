@@ -11,9 +11,33 @@
   "build": {
     "appId": "com.dreamreflex.lighter",
     "productName": "DreamReflexLighter",
+    "directories": {
+      "output": "dist"
+    },
     "win": {
-      "target": "portable"
-    }
+      "target": [
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "logo.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*",
+      "logo.ico",
+      "logo.png",
+      "logo.svg",
+      "package.json",
+      "!node_modules/**/*",
+      "!dist/**/*"
+    ]
   },
   "keywords": [
     "electron",

@@ -74,12 +74,35 @@ function getPowerShellVersion() {
   });
 }
 
+// 获取应用图标路径
+function getIconPath() {
+  // Windows 优先使用 .ico 文件
+  if (process.platform === 'win32') {
+    const icoPath = path.join(__dirname, 'logo.ico');
+    if (fs.existsSync(icoPath)) {
+      return icoPath;
+    }
+  }
+  
+  // 其他平台或 Windows 没有 .ico 时使用 .png
+  const pngPath = path.join(__dirname, 'logo.png');
+  if (fs.existsSync(pngPath)) {
+    return pngPath;
+  }
+  
+  // 如果都不存在，返回 null（使用默认图标）
+  return null;
+}
+
 // 创建窗口
 async function createWindow() {
   // 在创建窗口前获取 PowerShell 版本
   powershellVersion = await getPowerShellVersion();
 
-  mainWindow = new BrowserWindow({
+  // 获取图标路径
+  const iconPath = getIconPath();
+  
+  const windowOptions = {
     width: 1200,
     height: 800,
     webPreferences: {
@@ -87,7 +110,19 @@ async function createWindow() {
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js')
     }
-  });
+  };
+  
+  // 如果图标存在，添加到窗口选项
+  if (iconPath) {
+    windowOptions.icon = iconPath;
+  }
+  
+  mainWindow = new BrowserWindow(windowOptions);
+  
+  // 确保设置任务栏图标（Windows）
+  if (process.platform === 'win32' && iconPath) {
+    mainWindow.setIcon(iconPath);
+  }
 
   mainWindow.loadFile('renderer/index.html');
 
