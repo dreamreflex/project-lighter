@@ -1207,5 +1207,28 @@ document.addEventListener('DOMContentLoaded', () => {
     input.removeAttribute('disabled');
   });
   
+  // 帮助文档链接 - 使用外部浏览器打开
+  const helpLinkElement = document.getElementById('helpLink');
+  if (helpLinkElement) {
+    helpLinkElement.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const url = 'https://github.com/dreamReflex/project-lighter';
+      try {
+        if (window.electronAPI && window.electronAPI.openExternal) {
+          const result = await window.electronAPI.openExternal(url);
+          if (!result.success) {
+            showError('无法打开外部链接: ' + (result.error || '未知错误'));
+          }
+        } else {
+          // 备用方案：使用 window.open
+          window.open(url, '_blank');
+        }
+      } catch (error) {
+        console.error('打开外部链接失败:', error);
+        showError('打开外部链接失败: ' + error.message);
+      }
+    });
+  }
+  
   console.log('应用初始化完成');
 });

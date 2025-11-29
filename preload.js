@@ -19,6 +19,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // PowerShell版本
   getPowerShellVersion: () => ipcRenderer.invoke('get-powershell-version'),
   
+  // 打开外部链接
+  openExternal: (url) => ipcRenderer.invoke('open-external', url),
+  
   // 事件监听
   onProjectOutput: (callback) => {
     ipcRenderer.on('project-output', (event, data) => callback(data));

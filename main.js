@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
@@ -105,6 +105,7 @@ async function createWindow() {
   const windowOptions = {
     width: 1200,
     height: 800,
+    autoHideMenuBar: true, // 自动隐藏菜单栏
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -118,6 +119,9 @@ async function createWindow() {
   }
   
   mainWindow = new BrowserWindow(windowOptions);
+  
+  // 移除窗口菜单栏
+  mainWindow.setMenuBarVisibility(false);
   
   // 确保设置任务栏图标（Windows）
   if (process.platform === 'win32' && iconPath) {
@@ -423,11 +427,31 @@ ipcMain.handle('get-powershell-version', () => {
   return powershellVersion;
 });
 
+// 打开外部链接
+ipcMain.handle('open-external', async (event, url) => {
+  try {
+    await shell.openExternal(url);
+    return { success: true };
+  } catch (error) {
+    console.error('打开外部链接失败:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 // 禁用硬件加速以防止 GPU 进程崩溃
 app.disableHardwareAcceleration();
 
+// 移除菜单栏 - 创建空菜单
+function createEmptyMenu() {
+  const menu = Menu.buildFromTemplate([]);
+  Menu.setApplicationMenu(menu);
+}
+
 // 应用生命周期
 app.whenReady().then(() => {
+  // 移除应用菜单栏
+  createEmptyMenu();
+  
   createWindow();
 
   app.on('activate', () => {
