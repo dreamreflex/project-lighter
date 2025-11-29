@@ -438,51 +438,136 @@ function ansiToHtml(text, projectId) {
     currentStyles.bgColor = null;
   }
 
+  // 256 色调色板
+  function get256Color(index) {
+    if (index < 16) {
+      // 标准 16 色
+      const standard = [
+        '#000000', '#800000', '#008000', '#808000',
+        '#000080', '#800080', '#008080', '#c0c0c0',
+        '#808080', '#ff0000', '#00ff00', '#ffff00',
+        '#0000ff', '#ff00ff', '#00ffff', '#ffffff'
+      ];
+      return standard[index] || null;
+    } else if (index < 232) {
+      // 216 色立方体 (6x6x6)
+      const i = index - 16;
+      const r = Math.floor(i / 36);
+      const g = Math.floor((i % 36) / 6);
+      const b = i % 6;
+      const toRGB = (n) => n === 0 ? 0 : 55 + n * 40;
+      return `rgb(${toRGB(r)}, ${toRGB(g)}, ${toRGB(b)})`;
+    } else {
+      // 24 级灰度
+      const gray = (index - 232) * 10 + 8;
+      return `rgb(${gray}, ${gray}, ${gray})`;
+    }
+  }
+
   function processAnsiCode(code) {
     if (!code) return;
     const codes = code.split(';').map(c => parseInt(c) || 0);
 
-    for (const c of codes) {
+    let i = 0;
+    while (i < codes.length) {
+      const c = codes[i];
+
       switch (c) {
         case 0: // 重置所有
           resetStyles();
+          i++;
           break;
         case 1: // 粗体
           currentStyles.bold = true;
+          i++;
           break;
         case 2: // 暗淡
           currentStyles.dim = true;
+          i++;
           break;
         case 3: // 斜体
           currentStyles.italic = true;
+          i++;
           break;
         case 4: // 下划线
           currentStyles.underline = true;
+          i++;
           break;
         case 22: // 取消粗体/暗淡
           currentStyles.bold = false;
           currentStyles.dim = false;
+          i++;
           break;
         case 23: // 取消斜体
           currentStyles.italic = false;
+          i++;
           break;
         case 24: // 取消下划线
           currentStyles.underline = false;
+          i++;
           break;
         case 39: // 重置前景色
           currentStyles.fgColor = null;
+          i++;
           break;
         case 49: // 重置背景色
           currentStyles.bgColor = null;
+          i++;
+          break;
+        case 38: // 设置前景色
+        case 48: // 设置背景色
+          {
+            const isFg = c === 38;
+            if (i + 1 < codes.length) {
+              const mode = codes[i + 1];
+              if (mode === 5 && i + 2 < codes.length) {
+                // 256 色模式: 38;5;n 或 48;5;n
+                const colorIndex = codes[i + 2];
+                const color = get256Color(colorIndex);
+                if (isFg) {
+                  currentStyles.fgColor = color;
+                } else {
+                  currentStyles.bgColor = color;
+                }
+                i += 3;
+              } else if (mode === 2 && i + 4 < codes.length) {
+                // RGB 模式: 38;2;r;g;b 或 48;2;r;g;b
+                const r = codes[i + 2];
+                const g = codes[i + 3];
+                const b = codes[i + 4];
+                const color = `rgb(${r}, ${g}, ${b})`;
+                if (isFg) {
+                  currentStyles.fgColor = color;
+                } else {
+                  currentStyles.bgColor = color;
+                }
+                i += 5;
+              } else {
+                i++;
+              }
+            } else {
+              i++;
+            }
+          }
           break;
         default:
-          // 前景色 30-37, 90-97
+          // 标准前景色 30-37, 90-97
           if ((c >= 30 && c <= 37) || (c >= 90 && c <= 97)) {
             currentStyles.fgColor = colorMap[c] || null;
+            i++;
           }
-          // 背景色 40-47
+          // 标准背景色 40-47, 100-107
           else if (c >= 40 && c <= 47) {
             currentStyles.bgColor = colorMap[c] || null;
+            i++;
+          } else if (c >= 100 && c <= 107) {
+            // 亮背景色
+            const fgIndex = c - 60;
+            currentStyles.bgColor = colorMap[fgIndex] || null;
+            i++;
+          } else {
+            // 未知代码，跳过
+            i++;
           }
           break;
       }

@@ -5,6 +5,7 @@ const { spawn } = require('child_process');
 
 let mainWindow;
 const runningProcesses = new Map(); // key: projectId, value: childProcess
+const outputBuffers = new Map(); // key: projectId, value: { stdout: Buffer, stderr: Buffer }
 let powershellVersion = null;
 
 // 获取配置文件路径
@@ -119,41 +120,162 @@ function startProject(projectId, commands, workingDir) {
 
       // 使用 PowerShell
       const shellCommand = 'powershell.exe';
-      // Force UTF-8 encoding for the session
-      const args = ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; ${combinedCommand}`];
+      
+      // 设置完整的 UTF-8 编码环境
+      // 包括：控制台输出编码、输入编码、默认编码
+      const encodingSetup = `
+        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8;
+        [Console]::InputEncoding = [System.Text.Encoding]::UTF8;
+        $OutputEncoding = [System.Text.Encoding]::UTF8;
+        [System.Console]::OutputEncoding = [System.Text.Encoding]::UTF8;
+        $env:PYTHONIOENCODING = 'utf-8';
+        chcp 65001 | Out-Null;
+      `;
+      
+      const args = [
+        '-NoProfile',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-Command',
+        `${encodingSetup} ${combinedCommand}`
+      ];
 
       const childProcess = spawn(shellCommand, args, {
         cwd: workingDir || process.cwd(),
         shell: false,
-        stdio: ['pipe', 'pipe', 'pipe']
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: {
+          ...process.env,
+          PYTHONIOENCODING: 'utf-8',
+          PYTHONUTF8: '1',
+          LANG: 'en_US.UTF-8'
+        }
       });
 
       // 存储进程（使用 projectId 作为 key）
       runningProcesses.set(projectId, childProcess);
+      
+      // 初始化输出缓冲区
+      if (!outputBuffers.has(projectId)) {
+        outputBuffers.set(projectId, { stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) });
+      }
+
+      // 安全地将 Buffer 转换为 UTF-8 字符串
+      function safeBufferToString(buffer) {
+        if (!buffer || buffer.length === 0) return '';
+        
+        try {
+          // 确保是 Buffer
+          const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
+          // 使用 UTF-8 编码，并允许替换无效字符
+          return buf.toString('utf8');
+        } catch (error) {
+          try {
+            // 如果失败，尝试使用容错模式
+            const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
+            return buf.toString('utf8', 'replace');
+          } catch (e) {
+            return '[编码错误]';
+          }
+        }
+      }
+
+      // 处理输出数据，处理不完整的 UTF-8 字符
+      function processOutput(projectId, data, type) {
+        if (!data || (Buffer.isBuffer(data) && data.length === 0)) return;
+        
+        const buffers = outputBuffers.get(projectId);
+        if (!buffers) return;
+        
+        // 将新数据添加到缓冲区
+        const newData = Buffer.isBuffer(data) ? data : Buffer.from(data, 'utf8');
+        buffers[type] = Buffer.concat([buffers[type], newData]);
+        
+        // 尝试解码完整的内容
+        let decoded = '';
+        let remaining = Buffer.alloc(0);
+        
+        const buf = buffers[type];
+        if (buf.length === 0) return;
+        
+        // 从后往前查找完整的 UTF-8 字符边界
+        let validLength = buf.length;
+        for (let i = buf.length - 1; i >= Math.max(0, buf.length - 4); i--) {
+          const byte = buf[i];
+          // UTF-8 起始字节的特征
+          if ((byte & 0x80) === 0) {
+            // ASCII 字符或完整的多字节字符的最后一个字节
+            validLength = i + 1;
+            break;
+          } else if ((byte & 0xC0) === 0xC0) {
+            // 可能是多字节字符的起始字节，保留之前的字节
+            validLength = i;
+            break;
+          }
+        }
+        
+        if (validLength > 0) {
+          // 解码完整的部分
+          try {
+            decoded = buf.slice(0, validLength).toString('utf8');
+            remaining = buf.slice(validLength);
+            buffers[type] = remaining;
+          } catch (error) {
+            // 如果解码失败，尝试使用容错模式
+            try {
+              decoded = buf.slice(0, validLength).toString('utf8', 'replace');
+              remaining = buf.slice(validLength);
+              buffers[type] = remaining;
+            } catch (e) {
+              // 如果还是失败，清空缓冲区并跳过这段数据
+              buffers[type] = Buffer.alloc(0);
+              decoded = '[解码错误]';
+            }
+          }
+          
+          // 发送解码后的数据
+          if (decoded && mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('project-output', {
+              projectId,
+              type: type,
+              data: decoded
+            });
+          }
+        }
+      }
 
       // 处理输出
       childProcess.stdout.on('data', (data) => {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('project-output', {
-            projectId,
-            type: 'stdout',
-            data: data.toString()
-          });
-        }
+        processOutput(projectId, data, 'stdout');
       });
 
       childProcess.stderr.on('data', (data) => {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('project-output', {
-            projectId,
-            type: 'stderr',
-            data: data.toString()
-          });
-        }
+        processOutput(projectId, data, 'stderr');
       });
-
-      // 处理进程退出
+      
+      // 进程退出时，发送剩余的缓冲区数据
       childProcess.on('exit', (code) => {
+        const buffers = outputBuffers.get(projectId);
+        if (buffers) {
+          // 发送剩余的 stdout 数据
+          if (buffers.stdout.length > 0 && mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('project-output', {
+              projectId,
+              type: 'stdout',
+              data: safeBufferToString(buffers.stdout)
+            });
+          }
+          // 发送剩余的 stderr 数据
+          if (buffers.stderr.length > 0 && mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('project-output', {
+              projectId,
+              type: 'stderr',
+              data: safeBufferToString(buffers.stderr)
+            });
+          }
+          outputBuffers.delete(projectId);
+        }
+        
         runningProcesses.delete(projectId);
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('project-exit', {
@@ -162,6 +284,7 @@ function startProject(projectId, commands, workingDir) {
           });
         }
       });
+
 
       childProcess.on('error', (error) => {
         runningProcesses.delete(projectId);
