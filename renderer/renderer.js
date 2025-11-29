@@ -1,4 +1,7 @@
-const { ipcRenderer } = require('electron');
+// 检查 electronAPI 是否可用
+if (typeof window.electronAPI === 'undefined') {
+  console.error('electronAPI 未定义。请确保 preload 脚本已正确加载。');
+}
 
 let config = { projects: [] };
 let projectStatuses = {}; // projectId -> 'running' | 'stopped'
@@ -39,7 +42,10 @@ let commandCounter = 0; // 命令计数器
 // 加载配置
 async function loadConfig() {
   try {
-    config = await ipcRenderer.invoke('get-config');
+    if (!window.electronAPI) {
+      throw new Error('electronAPI 不可用');
+    }
+    config = await window.electronAPI.getConfig();
     renderProjects();
   } catch (error) {
     console.error('加载配置失败:', error);
@@ -186,7 +192,7 @@ async function startProject(projectId) {
       outputEl.textContent = `准备在 PowerShell 中执行以下命令序列:\n${commandList}\n\n${'='.repeat(50)}\n\n`;
     }
 
-    const result = await ipcRenderer.invoke('start-project', projectId, commands, project.workingDir);
+    const result = await window.electronAPI.startProject(projectId, commands, project.workingDir);
 
     if (result.success) {
       projectStatuses[projectId] = 'running';
@@ -202,7 +208,7 @@ async function startProject(projectId) {
 // 停止项目
 async function stopProject(projectId) {
   try {
-    const result = await ipcRenderer.invoke('stop-project', projectId);
+    const result = await window.electronAPI.stopProject(projectId);
     if (result) {
       projectStatuses[projectId] = 'stopped';
       updateProjectStatus(projectId);
@@ -238,9 +244,150 @@ function updateProjectStatus(projectId) {
 }
 
 
-// 显示错误信息
+// 显示错误信息（使用前端对话框）
 function showError(message) {
-  alert(message);
+  // 创建自定义错误提示框
+  const errorDiv = document.createElement('div');
+  errorDiv.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: #ef5350;
+    color: white;
+    padding: 16px 20px;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    z-index: 10000;
+    max-width: 400px;
+    font-size: 14px;
+    animation: slideInRight 0.3s ease;
+  `;
+  errorDiv.textContent = message;
+  
+  // 添加动画样式
+  if (!document.getElementById('error-animation-style')) {
+    const style = document.createElement('style');
+    style.id = 'error-animation-style';
+    style.textContent = `
+      @keyframes slideInRight {
+        from {
+          transform: translateX(100%);
+          opacity: 0;
+        }
+        to {
+          transform: translateX(0);
+          opacity: 1;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+  
+  document.body.appendChild(errorDiv);
+  
+  // 3秒后自动移除
+  setTimeout(() => {
+    errorDiv.style.animation = 'slideInRight 0.3s ease reverse';
+    setTimeout(() => errorDiv.remove(), 300);
+  }, 3000);
+}
+
+// 显示成功信息
+function showSuccess(message) {
+  const successDiv = document.createElement('div');
+  successDiv.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: #66bb6a;
+    color: white;
+    padding: 16px 20px;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    z-index: 10000;
+    max-width: 400px;
+    font-size: 14px;
+    animation: slideInRight 0.3s ease;
+  `;
+  successDiv.textContent = message;
+  document.body.appendChild(successDiv);
+  
+  setTimeout(() => {
+    successDiv.style.animation = 'slideInRight 0.3s ease reverse';
+    setTimeout(() => successDiv.remove(), 300);
+  }, 3000);
+}
+
+// 显示确认对话框（使用前端）
+function showConfirm(message) {
+  return new Promise((resolve) => {
+    const confirmDiv = document.createElement('div');
+    confirmDiv.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+      animation: fadeIn 0.2s ease;
+    `;
+    
+    const contentDiv = document.createElement('div');
+    contentDiv.style.cssText = `
+      background: white;
+      padding: 24px;
+      border-radius: 8px;
+      max-width: 400px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+    `;
+    
+    const messageP = document.createElement('p');
+    messageP.style.cssText = 'margin: 0 0 20px 0; font-size: 14px; color: #4a4a4a;';
+    messageP.textContent = message;
+    
+    const buttonDiv = document.createElement('div');
+    buttonDiv.style.cssText = 'display: flex; gap: 12px; justify-content: flex-end;';
+    
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'btn btn-secondary';
+    cancelBtn.textContent = '取消';
+    cancelBtn.onclick = () => {
+      document.body.removeChild(confirmDiv);
+      resolve(false);
+    };
+    
+    const confirmBtn = document.createElement('button');
+    confirmBtn.className = 'btn btn-primary';
+    confirmBtn.textContent = '确定';
+    confirmBtn.onclick = () => {
+      document.body.removeChild(confirmDiv);
+      resolve(true);
+    };
+    
+    buttonDiv.appendChild(cancelBtn);
+    buttonDiv.appendChild(confirmBtn);
+    contentDiv.appendChild(messageP);
+    contentDiv.appendChild(buttonDiv);
+    confirmDiv.appendChild(contentDiv);
+    
+    if (!document.getElementById('confirm-animation-style')) {
+      const style = document.createElement('style');
+      style.id = 'confirm-animation-style';
+      style.textContent = `
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+    
+    document.body.appendChild(confirmDiv);
+  });
 }
 
 // HTML 转义
@@ -392,6 +539,11 @@ function ansiToHtml(text, projectId) {
 function openConfigModal() {
   configTextarea.value = JSON.stringify(config, null, 2);
   configModal.classList.add('show');
+  // 确保可以正常输入
+  setTimeout(() => {
+    configTextarea.focus();
+    configTextarea.select();
+  }, 100);
 }
 
 // 关闭配置编辑模态框
@@ -434,7 +586,7 @@ async function saveConfig() {
       }
     });
 
-    const result = await ipcRenderer.invoke('save-config', newConfig);
+    const result = await window.electronAPI.saveConfig(newConfig);
     if (result) {
       config = newConfig;
       // 停止所有运行中的项目
@@ -446,7 +598,7 @@ async function saveConfig() {
       projectStatuses = {};
       renderProjects();
       closeConfigModal();
-      alert('配置保存成功！');
+      showSuccess('配置保存成功！');
     } else {
       throw new Error('保存配置失败');
     }
@@ -455,48 +607,69 @@ async function saveConfig() {
   }
 }
 
-// IPC 监听器
-ipcRenderer.on('project-output', (event, data) => {
-  const outputEl = document.getElementById(`output-${data.projectId}`);
-  if (outputEl) {
-    // 将 ANSI 转义序列转换为 HTML
-    const html = ansiToHtml(data.data, data.projectId);
-
-    // 使用 insertAdjacentHTML 来插入 HTML（保留样式）
-    outputEl.insertAdjacentHTML('beforeend', html);
-
-    // 自动滚动到底部
-    outputEl.scrollTop = outputEl.scrollHeight;
-  }
-});
-
-ipcRenderer.on('project-exit', (event, data) => {
-  projectStatuses[data.projectId] = 'stopped';
-  updateProjectStatus(data.projectId);
-
-  const outputEl = document.getElementById(`output-${data.projectId}`);
-  if (outputEl) {
-    const exitText = document.createTextNode(`\n\n[进程已退出，退出码: ${data.code}]\n`);
-    outputEl.appendChild(exitText);
-    outputEl.scrollTop = outputEl.scrollHeight;
-  }
-});
-
-ipcRenderer.on('project-error', (event, data) => {
-  projectStatuses[data.projectId] = 'stopped';
-  updateProjectStatus(data.projectId);
-
-  const outputEl = document.getElementById(`output-${data.projectId}`);
-  if (outputEl) {
-    const errorSpan = document.createElement('span');
-    errorSpan.style.color = '#f14c4c';
-    errorSpan.textContent = `\n\n[错误: ${data.error}]\n`;
-    outputEl.appendChild(errorSpan);
-    outputEl.scrollTop = outputEl.scrollHeight;
+// IPC 监听器设置
+function setupIPCListeners() {
+  if (!window.electronAPI) {
+    console.error('electronAPI 不可用，无法设置 IPC 监听器');
+    return;
   }
 
-  showError(`项目 ${data.projectId} 发生错误: ${data.error}`);
-});
+  // 项目输出监听
+  window.electronAPI.onProjectOutput((data) => {
+    const outputEl = document.getElementById(`output-${data.projectId}`);
+    if (outputEl) {
+      // 将 ANSI 转义序列转换为 HTML
+      const html = ansiToHtml(data.data, data.projectId);
+
+      // 使用 insertAdjacentHTML 来插入 HTML（保留样式）
+      outputEl.insertAdjacentHTML('beforeend', html);
+
+      // 自动滚动到底部
+      outputEl.scrollTop = outputEl.scrollHeight;
+    }
+  });
+
+  // 项目退出监听
+  window.electronAPI.onProjectExit((data) => {
+    projectStatuses[data.projectId] = 'stopped';
+    updateProjectStatus(data.projectId);
+
+    const outputEl = document.getElementById(`output-${data.projectId}`);
+    if (outputEl) {
+      const exitText = document.createTextNode(`\n\n[进程已退出，退出码: ${data.code}]\n`);
+      outputEl.appendChild(exitText);
+      outputEl.scrollTop = outputEl.scrollHeight;
+    }
+  });
+
+  // 项目错误监听
+  window.electronAPI.onProjectError((data) => {
+    projectStatuses[data.projectId] = 'stopped';
+    updateProjectStatus(data.projectId);
+
+    const outputEl = document.getElementById(`output-${data.projectId}`);
+    if (outputEl) {
+      const errorSpan = document.createElement('span');
+      errorSpan.style.color = '#f14c4c';
+      errorSpan.textContent = `\n\n[错误: ${data.error}]\n`;
+      outputEl.appendChild(errorSpan);
+      outputEl.scrollTop = outputEl.scrollHeight;
+    }
+
+    showError(`项目 ${data.projectId} 发生错误: ${data.error}`);
+  });
+
+  // PowerShell 版本监听
+  window.electronAPI.onPowerShellVersion((versionInfo) => {
+    if (versionInfo && versionInfo.success) {
+      powershellVersionEl.textContent = `PowerShell ${versionInfo.version} (${versionInfo.edition})`;
+      powershellVersionEl.title = `PowerShell 版本: ${versionInfo.version}\n版本类型: ${versionInfo.edition}`;
+    } else {
+      powershellVersionEl.textContent = 'PowerShell 版本: 无法获取';
+      powershellVersionEl.style.color = '#dc3545';
+    }
+  });
+}
 
 // 创建命令项HTML
 function createCommandItem(command = { name: '', command: '' }, index = 0) {
@@ -532,11 +705,22 @@ function createCommandItem(command = { name: '', command: '' }, index = 0) {
     updateCommandNumbers();
   });
 
-  // 确保输入框可以正常交互
+  // 确保输入框可以正常交互 - 移除所有可能阻止输入的属性
   const inputs = commandDiv.querySelectorAll('input');
   inputs.forEach(input => {
     input.disabled = false;
     input.readOnly = false;
+    input.autocomplete = 'off';
+    // 确保输入框可以正常接收焦点和输入
+    input.addEventListener('mousedown', (e) => {
+      e.stopPropagation();
+    });
+    input.addEventListener('click', (e) => {
+      e.stopPropagation();
+    });
+    input.addEventListener('focus', (e) => {
+      e.stopPropagation();
+    });
   });
 
   return commandDiv;
@@ -586,17 +770,32 @@ function openProjectModal(projectId = null) {
   // 显示模态框
   projectModal.classList.add('show');
 
-  // Ensure focus is set correctly
-  setTimeout(() => {
-    if (projectNameInput) {
-      projectNameInput.disabled = false;
-      projectNameInput.focus();
-      projectNameInput.select();
-    }
-    if (projectWorkingDirInput) {
-      projectWorkingDirInput.disabled = false;
-    }
-  }, 100);
+  // 确保输入框可以正常交互 - 使用 requestAnimationFrame 确保 DOM 已更新
+  requestAnimationFrame(() => {
+    setTimeout(() => {
+      // 确保所有输入框都可以正常使用
+      const allInputs = projectModal.querySelectorAll('input, textarea');
+      allInputs.forEach(input => {
+        input.disabled = false;
+        input.readOnly = false;
+        input.removeAttribute('readonly');
+        input.removeAttribute('disabled');
+        
+        // 添加事件监听器防止事件冒泡
+        ['mousedown', 'click', 'focus', 'keydown', 'keyup', 'input'].forEach(eventType => {
+          input.addEventListener(eventType, (e) => {
+            e.stopPropagation();
+          }, true);
+        });
+      });
+      
+      // 聚焦到第一个输入框
+      if (projectNameInput) {
+        projectNameInput.focus();
+        projectNameInput.select();
+      }
+    }, 50);
+  });
 }
 
 // 关闭项目编辑模态框
@@ -632,8 +831,13 @@ async function saveProject() {
   }
 
   for (const item of commandItems) {
-    const commandName = item.querySelector('.command-name').value.trim();
-    const commandContent = item.querySelector('.command-content').value.trim();
+    const commandNameInput = item.querySelector('.command-name');
+    const commandContentInput = item.querySelector('.command-content');
+    
+    if (!commandNameInput || !commandContentInput) continue;
+    
+    const commandName = commandNameInput.value.trim();
+    const commandContent = commandContentInput.value.trim();
 
     if (!commandContent) {
       showError('请填写所有命令的内容');
@@ -673,7 +877,7 @@ async function saveProject() {
     }
 
     // 保存配置
-    const result = await ipcRenderer.invoke('save-config', config);
+    const result = await window.electronAPI.saveConfig(config);
     if (result) {
       // 停止所有运行中的项目
       Object.keys(projectStatuses).forEach(projectId => {
@@ -685,7 +889,7 @@ async function saveProject() {
 
       renderProjects();
       closeProjectModal();
-      alert('项目保存成功！');
+      showSuccess('项目保存成功！');
     } else {
       showError('保存项目失败');
     }
@@ -696,7 +900,8 @@ async function saveProject() {
 
 // 删除项目
 async function deleteProject(projectId) {
-  if (!confirm('确定要删除这个项目吗？')) {
+  const confirmed = await showConfirm('确定要删除这个项目吗？');
+  if (!confirmed) {
     return;
   }
 
@@ -708,10 +913,10 @@ async function deleteProject(projectId) {
   config.projects = config.projects.filter(p => p.id !== projectId);
 
   try {
-    const result = await ipcRenderer.invoke('save-config', config);
+    const result = await window.electronAPI.saveConfig(config);
     if (result) {
       renderProjects();
-      alert('项目已删除');
+      showSuccess('项目已删除');
     } else {
       showError('删除项目失败');
     }
@@ -723,9 +928,9 @@ async function deleteProject(projectId) {
 // 导出配置
 async function exportConfig() {
   try {
-    const result = await ipcRenderer.invoke('export-config');
+    const result = await window.electronAPI.exportConfig();
     if (result.success) {
-      alert(`配置已导出到: ${result.path}`);
+      showSuccess(`配置已导出到: ${result.path}`);
     }
   } catch (error) {
     showError('导出配置失败: ' + error.message);
@@ -735,9 +940,10 @@ async function exportConfig() {
 // 导入配置
 async function importConfig() {
   try {
-    const result = await ipcRenderer.invoke('import-config');
+    const result = await window.electronAPI.importConfig();
     if (result.success) {
-      if (confirm('导入配置将覆盖当前配置，是否继续？')) {
+      const confirmed = await showConfirm('导入配置将覆盖当前配置，是否继续？');
+      if (confirmed) {
         // 停止所有运行中的项目
         Object.keys(projectStatuses).forEach(projectId => {
           if (projectStatuses[projectId] === 'running') {
@@ -747,10 +953,10 @@ async function importConfig() {
         projectStatuses = {};
 
         config = result.config;
-        const saveResult = await ipcRenderer.invoke('save-config', config);
+        const saveResult = await window.electronAPI.saveConfig(config);
         if (saveResult) {
           renderProjects();
-          alert('配置导入成功！');
+          showSuccess('配置导入成功！');
         } else {
           showError('保存导入的配置失败');
         }
@@ -780,17 +986,33 @@ addCommandBtn.addEventListener('click', () => {
   const commandItem = createCommandItem({ name: '', command: '' }, commandsContainer.children.length);
   commandsContainer.appendChild(commandItem);
   updateCommandNumbers();
+  
+  // 聚焦到新添加的命令输入框
+  setTimeout(() => {
+    const newCommandContentInput = commandItem.querySelector('.command-content');
+    if (newCommandContentInput) {
+      newCommandContentInput.focus();
+    }
+  }, 50);
 });
+
 selectDirBtn.addEventListener('click', async () => {
-  const dir = await ipcRenderer.invoke('select-directory');
-  if (dir) {
-    projectWorkingDirInput.value = dir;
+  try {
+    const dir = await window.electronAPI.selectDirectory();
+    if (dir) {
+      projectWorkingDirInput.value = dir;
+      // 触发input事件以确保值被识别
+      projectWorkingDirInput.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  } catch (error) {
+    showError('选择目录失败: ' + error.message);
   }
 });
+
 exportConfigBtn.addEventListener('click', exportConfig);
 importConfigBtn.addEventListener('click', importConfig);
 
-// 点击模态框外部关闭
+// 点击模态框外部关闭 - 但不要阻止输入框交互
 configModal.addEventListener('click', (e) => {
   if (e.target === configModal) {
     closeConfigModal();
@@ -798,35 +1020,59 @@ configModal.addEventListener('click', (e) => {
 });
 
 projectModal.addEventListener('click', (e) => {
+  // 只有在点击模态框背景时才关闭，不要阻止输入框的交互
   if (e.target === projectModal) {
     closeProjectModal();
   }
 });
 
-// 显示 PowerShell 版本信息
-ipcRenderer.on('powershell-version', (event, versionInfo) => {
-  if (versionInfo && versionInfo.success) {
-    powershellVersionEl.textContent = `PowerShell ${versionInfo.version} (${versionInfo.edition})`;
-    powershellVersionEl.title = `PowerShell 版本: ${versionInfo.version}\n版本类型: ${versionInfo.edition}`;
-  } else {
-    powershellVersionEl.textContent = 'PowerShell 版本: 无法获取';
-    powershellVersionEl.style.color = '#dc3545';
-  }
+// 阻止模态框内部点击事件冒泡到模态框本身（防止意外关闭）
+const modalContents = document.querySelectorAll('.modal-content');
+modalContents.forEach(modalContent => {
+  modalContent.addEventListener('click', (e) => {
+    e.stopPropagation();
+  });
 });
 
-// 初始化时也尝试获取版本（如果主进程已经获取）
-ipcRenderer.invoke('get-powershell-version').then(versionInfo => {
-  if (versionInfo) {
-    if (versionInfo.success) {
-      powershellVersionEl.textContent = `PowerShell ${versionInfo.version} (${versionInfo.edition})`;
-      powershellVersionEl.title = `PowerShell 版本: ${versionInfo.version}\n版本类型: ${versionInfo.edition}`;
-    } else {
-      powershellVersionEl.textContent = 'PowerShell 版本: 无法获取';
-      powershellVersionEl.style.color = '#dc3545';
+// 初始化 PowerShell 版本信息
+async function initPowerShellVersion() {
+  try {
+    if (!window.electronAPI) return;
+    
+    const versionInfo = await window.electronAPI.getPowerShellVersion();
+    if (versionInfo) {
+      if (versionInfo.success) {
+        powershellVersionEl.textContent = `PowerShell ${versionInfo.version} (${versionInfo.edition})`;
+        powershellVersionEl.title = `PowerShell 版本: ${versionInfo.version}\n版本类型: ${versionInfo.edition}`;
+      } else {
+        powershellVersionEl.textContent = 'PowerShell 版本: 无法获取';
+        powershellVersionEl.style.color = '#dc3545';
+      }
     }
+  } catch (error) {
+    console.error('获取 PowerShell 版本失败:', error);
   }
-});
+}
 
 // 初始化
-loadConfig();
-
+document.addEventListener('DOMContentLoaded', () => {
+  // 设置 IPC 监听器
+  setupIPCListeners();
+  
+  // 加载配置
+  loadConfig();
+  
+  // 初始化 PowerShell 版本
+  initPowerShellVersion();
+  
+  // 确保所有输入框在页面加载后都可以正常使用
+  const allInputs = document.querySelectorAll('input, textarea');
+  allInputs.forEach(input => {
+    input.disabled = false;
+    input.readOnly = false;
+    input.removeAttribute('readonly');
+    input.removeAttribute('disabled');
+  });
+  
+  console.log('应用初始化完成');
+});

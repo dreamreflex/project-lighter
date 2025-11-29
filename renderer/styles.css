@@ -293,6 +293,10 @@ header h1 {
   animation: modalSlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+.modal-large {
+  max-width: 800px;
+}
+
 @keyframes modalSlideUp {
   from {
     transform: translateY(20px);
@@ -383,6 +387,20 @@ header h1 {
 
 .form-control::placeholder {
   color: #c0c0c0;
+}
+
+.input-group {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.input-group .form-control {
+  flex: 1;
+}
+
+.input-group .btn {
+  white-space: nowrap;
 }
 
 /* Command Items */
