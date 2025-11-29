@@ -5,6 +5,7 @@ if (typeof window.electronAPI === 'undefined') {
 
 let config = { projects: [] };
 let projectStatuses = {}; // projectId -> 'running' | 'stopped'
+const projectOutputs = new Map(); // projectId -> HTML content (保存每个项目的控制台输出)
 
 // DOM 元素
 const projectsContainer = document.getElementById('projectsContainer');
@@ -55,6 +56,17 @@ async function loadConfig() {
 
 // 渲染项目列表
 function renderProjects() {
+  // 在重新渲染之前，保存所有现有项目的输出内容
+  const existingProjects = projectsContainer.querySelectorAll('.project-card');
+  existingProjects.forEach(card => {
+    const projectId = card.id.replace('project-', '');
+    const outputEl = document.getElementById(`output-${projectId}`);
+    if (outputEl && outputEl.innerHTML.trim()) {
+      // 保存输出内容的 HTML
+      projectOutputs.set(projectId, outputEl.innerHTML);
+    }
+  });
+
   if (!config.projects || config.projects.length === 0) {
     projectsContainer.style.display = 'none';
     emptyState.style.display = 'block';
@@ -69,7 +81,26 @@ function renderProjects() {
   config.projects.forEach(project => {
     const projectCard = createProjectCard(project);
     projectsContainer.appendChild(projectCard);
+    
+    // 恢复该项目的输出内容（如果存在）
+    const savedOutput = projectOutputs.get(project.id);
+    if (savedOutput) {
+      const outputEl = document.getElementById(`output-${project.id}`);
+      if (outputEl) {
+        outputEl.innerHTML = savedOutput;
+        // 恢复滚动位置到底部
+        outputEl.scrollTop = outputEl.scrollHeight;
+      }
+    }
   });
+  
+  // 清理已删除项目的输出缓存
+  const currentProjectIds = new Set(config.projects.map(p => p.id));
+  for (const [projectId] of projectOutputs) {
+    if (!currentProjectIds.has(projectId)) {
+      projectOutputs.delete(projectId);
+    }
+  }
 }
 
 // 获取项目的命令列表（支持向后兼容）
@@ -180,16 +211,22 @@ async function startProject(projectId) {
       return;
     }
 
-    // 清空输出
+    // 清空输出并显示启动信息
     const outputEl = document.getElementById(`output-${projectId}`);
     if (outputEl) {
-      outputEl.textContent = '';
       // 显示将要执行的命令序列
       const commandList = commands.map((cmd, index) => {
         const name = cmd.name || `步骤 ${index + 1}`;
-        return `${index + 1}. [${name}] ${cmd.command}`;
-      }).join('\n');
-      outputEl.textContent = `准备在 PowerShell 中执行以下命令序列:\n${commandList}\n\n${'='.repeat(50)}\n\n`;
+        return `${index + 1}. [${escapeHtml(name)}] ${escapeHtml(cmd.command)}`;
+      }).join('<br>');
+      const startMessage = `准备在 PowerShell 中执行以下命令序列:<br>${commandList}<br><br>${'='.repeat(50)}<br><br>`;
+      outputEl.innerHTML = startMessage;
+      
+      // 更新输出缓存（启动时清空旧输出，保存新的启动信息）
+      projectOutputs.set(projectId, startMessage);
+      
+      // 自动滚动到底部
+      outputEl.scrollTop = outputEl.scrollHeight;
     }
 
     const result = await window.electronAPI.startProject(projectId, commands, project.workingDir);
@@ -708,6 +745,9 @@ function setupIPCListeners() {
 
       // 使用 insertAdjacentHTML 来插入 HTML（保留样式）
       outputEl.insertAdjacentHTML('beforeend', html);
+      
+      // 更新输出缓存，以便在重新渲染时保留内容
+      projectOutputs.set(data.projectId, outputEl.innerHTML);
 
       // 自动滚动到底部
       outputEl.scrollTop = outputEl.scrollHeight;
@@ -723,6 +763,10 @@ function setupIPCListeners() {
     if (outputEl) {
       const exitText = document.createTextNode(`\n\n[进程已退出，退出码: ${data.code}]\n`);
       outputEl.appendChild(exitText);
+      
+      // 更新输出缓存
+      projectOutputs.set(data.projectId, outputEl.innerHTML);
+      
       outputEl.scrollTop = outputEl.scrollHeight;
     }
   });
@@ -738,6 +782,10 @@ function setupIPCListeners() {
       errorSpan.style.color = '#f14c4c';
       errorSpan.textContent = `\n\n[错误: ${data.error}]\n`;
       outputEl.appendChild(errorSpan);
+      
+      // 更新输出缓存
+      projectOutputs.set(data.projectId, outputEl.innerHTML);
+      
       outputEl.scrollTop = outputEl.scrollHeight;
     }
 
@@ -964,13 +1012,13 @@ async function saveProject() {
     // 保存配置
     const result = await window.electronAPI.saveConfig(config);
     if (result) {
-      // 停止所有运行中的项目
-      Object.keys(projectStatuses).forEach(projectId => {
-        if (projectStatuses[projectId] === 'running') {
-          stopProject(projectId);
-        }
-      });
-      projectStatuses = {};
+      // 如果是编辑现有项目，且该项目正在运行，才停止它
+      // 新建项目时不应该停止任何项目
+      if (editingProjectId && projectStatuses[editingProjectId] === 'running') {
+        await stopProject(editingProjectId);
+        // 注意：不要清空 projectStatuses，因为其他项目的状态应该保留
+        delete projectStatuses[editingProjectId];
+      }
 
       renderProjects();
       closeProjectModal();
