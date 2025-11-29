@@ -283,13 +283,25 @@ function startProject(projectId, commands, workingDir) {
         }
       }
 
+      // 存储所有输出用于分析权限问题（检查 stdout 和 stderr）
+      let allOutput = '';
+      
+      // 存储所有输出用于分析权限问题
+      let allOutput = '';
+      
       // 处理输出
       childProcess.stdout.on('data', (data) => {
         processOutput(projectId, data, 'stdout');
+        // 收集所有输出用于权限检测（错误信息有时也会出现在 stdout）
+        const outputText = safeBufferToString(data);
+        allOutput += outputText;
       });
 
       childProcess.stderr.on('data', (data) => {
         processOutput(projectId, data, 'stderr');
+        // 同时收集错误信息用于分析
+        const errorText = safeBufferToString(data);
+        allOutput += errorText;
       });
       
       // 进程退出时，发送剩余的缓冲区数据
@@ -298,28 +310,52 @@ function startProject(projectId, commands, workingDir) {
         if (buffers) {
           // 发送剩余的 stdout 数据
           if (buffers.stdout.length > 0 && mainWindow && !mainWindow.isDestroyed()) {
+            const stdoutText = safeBufferToString(buffers.stdout);
+            allOutput += stdoutText;
             mainWindow.webContents.send('project-output', {
               projectId,
               type: 'stdout',
-              data: safeBufferToString(buffers.stdout)
+              data: stdoutText
             });
           }
           // 发送剩余的 stderr 数据
           if (buffers.stderr.length > 0 && mainWindow && !mainWindow.isDestroyed()) {
+            const stderrText = safeBufferToString(buffers.stderr);
+            allOutput += stderrText;
             mainWindow.webContents.send('project-output', {
               projectId,
               type: 'stderr',
-              data: safeBufferToString(buffers.stderr)
+              data: stderrText
             });
           }
           outputBuffers.delete(projectId);
         }
         
+        // 分析所有输出，检测权限问题（检查 stdout 和 stderr）
+        const outputLower = allOutput.toLowerCase();
+        const isPermissionError = outputLower && (
+          outputLower.includes('access is denied') ||
+          outputLower.includes('拒绝访问') ||
+          outputLower.includes('permission denied') ||
+          outputLower.includes('权限被拒绝') ||
+          outputLower.includes('权限') ||
+          outputLower.includes('管理员') ||
+          outputLower.includes('administrator') ||
+          outputLower.includes('elevated') ||
+          outputLower.includes('requires administrator') ||
+          outputLower.includes('run as administrator') ||
+          outputLower.includes('以管理员身份运行') ||
+          outputLower.includes('此操作需要提升') ||
+          outputLower.includes('elevation required')
+        );
+        
         runningProcesses.delete(projectId);
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('project-exit', {
             projectId,
-            code
+            code,
+            isPermissionError: isPermissionError,
+            errorHint: isPermissionError ? '此命令可能需要管理员权限。请尝试以管理员身份运行此应用。' : null
           });
         }
       });

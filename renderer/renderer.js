@@ -761,13 +761,57 @@ function setupIPCListeners() {
 
     const outputEl = document.getElementById(`output-${data.projectId}`);
     if (outputEl) {
-      const exitText = document.createTextNode(`\n\n[进程已退出，退出码: ${data.code}]\n`);
-      outputEl.appendChild(exitText);
+      // 检查退出码，提供更友好的提示
+      let exitMessage = '';
+      if (data.code === 0) {
+        exitMessage = '[进程已成功退出，退出码: 0]';
+      } else if (data.code === 1 || data.code === null) {
+        // 通常权限错误或一般错误
+        exitMessage = `[进程已退出，退出码: ${data.code || '未知'}]`;
+      } else {
+        exitMessage = `[进程已退出，退出码: ${data.code}]`;
+      }
+      
+      const exitSpan = document.createElement('span');
+      exitSpan.style.color = data.code === 0 ? '#66bb6a' : '#f14c4c';
+      exitSpan.style.fontWeight = '500';
+      exitSpan.textContent = `\n\n${exitMessage}\n`;
+      outputEl.appendChild(exitSpan);
+      
+      // 如果是权限错误，显示特殊提示
+      if (data.isPermissionError && data.errorHint) {
+        const permissionHint = document.createElement('div');
+        permissionHint.style.cssText = `
+          margin-top: 8px;
+          padding: 12px;
+          background: #fff3cd;
+          border: 1px solid #ffc107;
+          border-radius: 4px;
+          color: #856404;
+          font-size: 13px;
+          line-height: 1.5;
+        `;
+        permissionHint.innerHTML = `
+          <strong>⚠️ 权限提示：</strong><br>
+          ${escapeHtml(data.errorHint)}<br>
+          <small>解决方法：右键点击应用图标 → 选择"以管理员身份运行"</small>
+        `;
+        outputEl.appendChild(permissionHint);
+      }
       
       // 更新输出缓存
       projectOutputs.set(data.projectId, outputEl.innerHTML);
       
       outputEl.scrollTop = outputEl.scrollHeight;
+      
+      // 如果退出码非零，显示警告
+      if (data.code !== 0 && data.code !== null) {
+        if (data.isPermissionError) {
+          showError(`项目需要管理员权限才能运行。请以管理员身份运行此应用后重试。`);
+        } else {
+          showError(`项目进程异常退出 (退出码: ${data.code})。请检查命令输出中的错误信息。`);
+        }
+      }
     }
   });
 
